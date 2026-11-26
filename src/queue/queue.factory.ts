@@ -22,8 +22,15 @@ export function getQueue(): Queue {
 export function addJob<T extends Record<string, unknown>>(
   type: string,
   data: T,
+  options: {
+    jobId: string;
+    attempts: number;
+  },
 ): Promise<Job<T>> {
-  return getQueue().add(type, data);
+  return getQueue().add(type, data, {
+    jobId: options.jobId,
+    attempts: options.attempts,
+  });
 }
 
 export async function closeQueue(): Promise<void> {

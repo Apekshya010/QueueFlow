@@ -2,6 +2,7 @@ import { createApp } from "./app.js";
 import { disconnectDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
 import { disconnectRedis } from "./config/redis.js";
+import { closeQueue } from "./queue/queue.factory.js";
 
 const app = createApp();
 
@@ -29,6 +30,7 @@ async function shutdown(): Promise<void> {
     });
   });
 
+  await closeQueue();
   await disconnectDatabase();
   await disconnectRedis();
 }
