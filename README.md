@@ -1,6 +1,6 @@
 # QueueFlow
 
-Background job platform. This phase runs the API, PostgreSQL, and Redis. Do not add BullMQ until `GET /health` is green.
+Background job platform. The API, PostgreSQL, and Redis come up together. BullMQ uses that Redis connection for one queue, `queueflow-default`. A job's queue name is its type string. HTTP submission is not wired up yet.
 
 ## Requirements
 
