@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "QueueFlow",
-    "description": "Phase 2 checks for POST /api/jobs. Start the API with npm run dev. Start the worker with npm run worker when the request should be processed.",
+    "description": "Job submit, list, and detail. Start the API with npm run dev. Start the worker with npm run worker when a submitted job should be processed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -45,6 +45,35 @@
           "raw": "{\n  \"type\": \"SEND_EMAIL\",\n  \"payload\": {\n    \"subject\": \"Welcome\",\n    \"body\": \"Welcome to QueueFlow!\"\n  },\n  \"options\": {\n    \"attempts\": 1\n  }\n}"
         },
         "url": "http://127.0.0.1:3000/api/jobs"
+      }
+    },
+    {
+      "name": "List jobs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://127.0.0.1:3000/api/jobs?page=1&pageSize=20",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "3000",
+          "path": ["api", "jobs"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "pageSize", "value": "20" },
+            { "key": "status", "value": "completed", "disabled": true },
+            { "key": "type", "value": "SEND_EMAIL", "disabled": true }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get job",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "http://127.0.0.1:3000/api/jobs/00000000-0000-4000-8000-000000000000",
+        "description": "Replace the id with jobId from Submit welcome email."
       }
     }
   ]
