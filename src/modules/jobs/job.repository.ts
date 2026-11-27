@@ -15,3 +15,20 @@ export function createJob(input: {
     },
   });
 }
+
+export function markJobFailed(id: string, error: string) {
+  return prisma.job.update({
+    where: { id },
+    data: {
+      status: "FAILED",
+      error,
+    },
+  });
+}
+
+export function setBullJobId(id: string, bullJobId: string) {
+  return prisma.job.update({
+    where: { id },
+    data: { bullJobId },
+  });
+}

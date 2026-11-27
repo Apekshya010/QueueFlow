@@ -33,6 +33,7 @@ model User {
 
 model Job {
   id           String       @id @default(uuid()) @db.Uuid
+  bullJobId    String?      @map("bull_job_id")
   type         String
   payload      Json
   status       JobStatus    @default(WAITING)

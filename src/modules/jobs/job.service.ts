@@ -1,6 +1,15 @@
 import { z } from "zod";
 import { addJob } from "../../queue/queue.factory.js";
-import { createJob } from "./job.repository.js";
+import { createJob, markJobFailed, setBullJobId } from "./job.repository.js";
+
+export class EnqueueFailedError extends Error {
+  readonly statusCode = 503;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "EnqueueFailedError";
+  }
+}
 
 const submitJobSchema = z.object({
   type: z.literal("SEND_EMAIL"),
@@ -25,17 +34,31 @@ export async function submitJob(input: SubmitJobInput) {
     maxAttempts: input.options.attempts,
   });
 
-  await addJob(
-    job.type,
-    {
-      type: job.type,
-      payload: input.payload,
-    },
-    {
-      jobId: job.id,
-      attempts: job.maxAttempts,
-    },
-  );
+  try {
+    await addJob(
+      job.type,
+      {
+        type: job.type,
+        payload: input.payload,
+      },
+      {
+        jobId: job.id,
+        attempts: job.maxAttempts,
+      },
+    );
+  } catch (error) {
+    const message = errorText(error);
+    await markJobFailed(job.id, message);
+    throw new EnqueueFailedError(message);
+  }
 
-  return job;
+  return setBullJobId(job.id, job.id);
+}
+
+function errorText(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+
+  return "Failed to enqueue job";
 }
