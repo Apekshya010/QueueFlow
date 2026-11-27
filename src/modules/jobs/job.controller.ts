@@ -9,6 +9,7 @@ import {
   parseListJobsQuery,
   parseSubmitJob,
   submitJob,
+  retryFailedJob,
   type ListJobsQuery,
   type SubmitJobInput,
 } from "./job.service.js";
@@ -122,6 +123,45 @@ export function getJobAttempts(req: Request, res: Response, next: NextFunction):
       res.status(200).json({
         success: true,
         data: attempts,
+      });
+    })
+    .catch(next);
+}
+
+export function postJobRetry(req: Request, res: Response, next: NextFunction): void {
+  let id: string;
+
+  try {
+    id = parseJobId(firstParam(req.params.id));
+  } catch (error) {
+    if (error instanceof ZodError) {
+      next(new HttpError(404, "Job not found"));
+      return;
+    }
+
+    next(error);
+    return;
+  }
+
+  retryFailedJob(id)
+    .then((result) => {
+      if (result.outcome === "missing") {
+        next(new HttpError(404, "Job not found"));
+        return;
+      }
+
+      if (result.outcome === "conflict") {
+        next(new HttpError(409, "Only failed jobs can be retried"));
+        return;
+      }
+
+      res.status(202).json({
+        success: true,
+        message: "Job retry submitted",
+        data: {
+          jobId: result.id,
+          status: result.status.toLowerCase(),
+        },
       });
     })
     .catch(next);

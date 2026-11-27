@@ -9,12 +9,7 @@ import {
 } from "../modules/jobs/job.repository.js";
 import type { Prisma } from "../generated/prisma/client.js";
 import { processors } from "../processors/index.js";
-import { QUEUE_NAME } from "../queue/queue.constants.js";
-
-type QueueJobData = {
-  type: string;
-  payload: unknown;
-};
+import { QUEUE_NAME, type QueueJobData } from "../queue/queue.constants.js";
 
 const worker = new Worker<QueueJobData, Prisma.InputJsonObject>(
   QUEUE_NAME,
@@ -26,7 +21,7 @@ const worker = new Worker<QueueJobData, Prisma.InputJsonObject>(
 );
 
 async function processJob(job: Job<QueueJobData>): Promise<Prisma.InputJsonObject> {
-  const id = job.id;
+  const id = databaseIdOf(job);
 
   if (!id) {
     throw new UnrecoverableError("Job is missing an id");
@@ -55,7 +50,7 @@ async function processJob(job: Job<QueueJobData>): Promise<Prisma.InputJsonObjec
 }
 
 worker.on("completed", (job, result) => {
-  const id = job.id;
+  const id = databaseIdOf(job);
 
   if (!id) {
     console.error("Completed job is missing an id");
@@ -72,7 +67,12 @@ worker.on("completed", (job, result) => {
 });
 
 worker.on("failed", (job, error) => {
-  const id = job?.id;
+  if (!job) {
+    console.error("Failed job is missing");
+    return;
+  }
+
+  const id = databaseIdOf(job);
 
   if (!id) {
     console.error("Failed job is missing an id");
@@ -99,14 +99,24 @@ worker.on("ready", () => {
   console.log(`QueueFlow worker listening on queue ${QUEUE_NAME}`);
 });
 
-function attemptNumberOf(job: Job): number {
-  // attemptsStarted increments when the job becomes active. attemptsMade
-  // catches up only after that attempt finishes, so it is still 0 on the first run.
-  if (job.attemptsStarted > 0) {
-    return job.attemptsStarted;
+function databaseIdOf(job: Job<QueueJobData>): string | undefined {
+  if (typeof job.data.jobId === "string" && job.data.jobId.length > 0) {
+    return job.data.jobId;
   }
 
-  return Math.max(job.attemptsMade, 1);
+  return job.id;
+}
+
+function attemptNumberOf(job: Job<QueueJobData>): number {
+  // attemptsStarted increments when the job becomes active. attemptsMade
+  // catches up only after that attempt finishes, so it is still 0 on the first run.
+  const started = job.attemptsStarted > 0 ? job.attemptsStarted : Math.max(job.attemptsMade, 1);
+  const offset =
+    typeof job.data.attemptOffset === "number" && job.data.attemptOffset > 0
+      ? job.data.attemptOffset
+      : 0;
+
+  return offset + started;
 }
 
 function reportUpdateError(id: string, error: unknown): void {

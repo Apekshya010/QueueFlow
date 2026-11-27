@@ -156,6 +156,34 @@ export function setBullJobId(id: string, bullJobId: string) {
   });
 }
 
+export function findJobForRetry(id: string) {
+  return prisma.job.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      type: true,
+      payload: true,
+      status: true,
+      attemptsMade: true,
+      maxAttempts: true,
+    },
+  });
+}
+
+export async function claimFailedJob(id: string) {
+  const claimed = await prisma.job.updateMany({
+    where: { id, status: "FAILED" },
+    data: {
+      status: "WAITING",
+      error: null,
+      result: Prisma.DbNull,
+      completedAt: null,
+    },
+  });
+
+  return claimed.count === 1;
+}
+
 export async function findJobs(input: {
   status?: JobStatus;
   type?: string;

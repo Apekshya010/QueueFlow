@@ -75,8 +75,11 @@ Optional query params: `status` (`waiting`, `active`, `completed`, `failed`), `t
 
 `GET /api/jobs/:id/attempts` returns that job's execution attempts in order. Each attempt has `id`, `attemptNumber`, `status`, `error`, `startedAt`, and `completedAt`. A job that has not started returns an empty list. An unknown id is HTTP 404.
 
+`POST /api/jobs/:id/retry` queues a failed job again. The response is HTTP 202 and the row returns to `waiting`. Earlier attempt rows stay in place, and the next run continues the attempt numbers. Waiting, active, and completed jobs return HTTP 409. An unknown id is HTTP 404. The new queue job gets a new BullMQ id and the original `maxAttempts`.
+
 ```powershell
 curl.exe "http://127.0.0.1:3000/api/jobs?status=completed&page=1&pageSize=20"
 curl.exe http://127.0.0.1:3000/api/jobs/<jobId>
 curl.exe http://127.0.0.1:3000/api/jobs/<jobId>/attempts
+curl.exe -X POST http://127.0.0.1:3000/api/jobs/<jobId>/retry
 ```

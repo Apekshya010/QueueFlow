@@ -102,6 +102,15 @@
         "url": "http://127.0.0.1:3000/api/jobs/00000000-0000-4000-8000-000000000000/attempts",
         "description": "Replace the id with jobId from Submit welcome email. Attempts are in attemptNumber order."
       }
+    },
+    {
+      "name": "Retry failed job",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "http://127.0.0.1:3000/api/jobs/00000000-0000-4000-8000-000000000000/retry",
+        "description": "Replace the id with a failed job. Returns 202 when the job is queued again. Returns 409 unless the job is failed."
+      }
     }
   ]
 }

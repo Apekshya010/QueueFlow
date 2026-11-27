@@ -1,6 +1,6 @@
 import { Queue, type Job } from "bullmq";
 import { redis } from "../config/redis.js";
-import { defaultJobOptions, QUEUE_NAME } from "./queue.constants.js";
+import { defaultJobOptions, QUEUE_NAME, type QueueJobData } from "./queue.constants.js";
 
 const REDIS_PING_TIMEOUT_MS = 1000;
 const ENQUEUE_TIMEOUT_MS = 2000;
@@ -22,14 +22,14 @@ export function getQueue(): Queue {
   return queue;
 }
 
-export async function addJob<T extends Record<string, unknown>>(
+export async function addJob(
   type: string,
-  data: T,
+  data: QueueJobData,
   options: {
     jobId: string;
     attempts: number;
   },
-): Promise<Job<T>> {
+): Promise<Job<QueueJobData>> {
   await assertRedisReady();
 
   return withTimeout(

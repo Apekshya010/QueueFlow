@@ -13,3 +13,10 @@ export const defaultJobOptions = {
     delay: RETRY_BACKOFF_MS,
   },
 } satisfies DefaultJobOptions;
+
+export type QueueJobData = {
+  type: string;
+  payload: unknown;
+  jobId: string;
+  attemptOffset: number;
+};

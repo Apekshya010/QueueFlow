@@ -1,10 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { JobStatus } from "../../generated/prisma/client.js";
 import { addJob } from "../../queue/queue.factory.js";
 import {
+  claimFailedJob,
   createJob,
   findJobAttempts,
   findJobById,
+  findJobForRetry,
   findJobId,
   findJobs,
   markJobFailed,
@@ -52,6 +55,11 @@ const publicToDbStatus = {
 
 export type ListJobsQuery = z.infer<typeof listJobsQuerySchema>;
 
+export type RetryJobResult =
+  | { outcome: "missing" }
+  | { outcome: "conflict" }
+  | { outcome: "queued"; id: string; status: JobStatus };
+
 export function parseSubmitJob(body: unknown): SubmitJobInput {
   return submitJobSchema.parse(body);
 }
@@ -77,6 +85,8 @@ export async function submitJob(input: SubmitJobInput) {
       {
         type: job.type,
         payload: input.payload,
+        jobId: job.id,
+        attemptOffset: 0,
       },
       {
         jobId: job.id,
@@ -90,6 +100,51 @@ export async function submitJob(input: SubmitJobInput) {
   }
 
   return setBullJobId(job.id, job.id);
+}
+
+export async function retryFailedJob(id: string): Promise<RetryJobResult> {
+  const job = await findJobForRetry(id);
+
+  if (!job) {
+    return { outcome: "missing" };
+  }
+
+  if (job.status !== "FAILED") {
+    return { outcome: "conflict" };
+  }
+
+  const claimed = await claimFailedJob(id);
+
+  if (!claimed) {
+    const current = await findJobForRetry(id);
+    return current ? { outcome: "conflict" } : { outcome: "missing" };
+  }
+
+  const bullJobId = randomUUID();
+
+  try {
+    await addJob(
+      job.type,
+      {
+        type: job.type,
+        payload: job.payload,
+        jobId: job.id,
+        attemptOffset: job.attemptsMade,
+      },
+      {
+        jobId: bullJobId,
+        attempts: job.maxAttempts,
+      },
+    );
+  } catch (error) {
+    const message = errorText(error);
+    await markJobFailed(job.id, message);
+    throw new EnqueueFailedError(message);
+  }
+
+  const queued = await setBullJobId(job.id, bullJobId);
+
+  return { outcome: "queued", id: queued.id, status: queued.status };
 }
 
 export async function listJobs(query: ListJobsQuery) {
