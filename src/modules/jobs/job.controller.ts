@@ -36,7 +36,7 @@ export function postJob(req: Request, res: Response, next: NextFunction): void {
         message: "Job submitted successfully",
         data: {
           jobId: job.id,
-          status: job.status.toLowerCase(),
+          status: "waiting",
         },
       });
     })
@@ -160,7 +160,7 @@ export function postJobRetry(req: Request, res: Response, next: NextFunction): v
         message: "Job retry submitted",
         data: {
           jobId: result.id,
-          status: result.status.toLowerCase(),
+          status: "waiting",
         },
       });
     })

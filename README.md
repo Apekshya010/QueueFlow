@@ -56,14 +56,28 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/api/jobs -ContentType 
 
 `payload.failOnce: true` is a dev hook for `SEND_EMAIL`. The first attempt in the current worker process throws `Simulated first-attempt failure`. The next attempt sends the email, so `to`, `subject`, and `body` still have to be present. Restarting the worker clears that memory.
 
-## Test in Postman
+## Response contract
 
-Import `postman/QueueFlow.postman_collection.json` with Postman's Import button. `GET /api/jobs` lists jobs newest first. `GET /api/jobs/:id` returns one job, including its payload and result. After each send, the `jobId` in the 202 response is the id those routes use.
+Submit and retry return `202` with `{ success, message, data: { jobId, status: "waiting" } }`. That status is the state the API assigned when it accepted the job. A later GET shows `active`, `completed`, or `failed` after the worker moves the row.
 
-1. With `npm run dev` and `npm run worker` both running, send **Submit welcome email**. The response is HTTP 202 and `status` is `waiting` immediately. Refresh the row. It becomes `COMPLETED`, `attempts_made` is 1, `result` is `{ "message": "Email sent successfully" }`, and both `started_at` and `completed_at` are filled.
-2. Stop the worker terminal with Ctrl+C. Send **Submit welcome email** again. Wait a few seconds and refresh Prisma Studio. That new row stays `WAITING`.
-3. Run `npm run worker` again. Refresh the same row. The worker picks it up and it becomes `COMPLETED`.
-4. With the worker running, send **Submit email missing to**. The API still returns 202. The row then becomes `FAILED` with error `Missing required field: to`. `attempts` is 1 in that request, so it does not retry.
+Reads return `200` with `{ success, data }`. A job's `id` in a read is the same value as `jobId` from submit. List data is `{ items, page, pageSize, total }`. An empty list is `items: []` with `total: 0`. Detail adds `payload`, `result`, `error`, and `priority`. Attempts are an array ordered by `attemptNumber`.
+
+Errors return `{ success: false, message }`. In development the body also includes `stack`. Unknown and malformed ids are `404`. A query or body Zod rejects is `400`. Retry of a job that is not `failed` is `409`.
+
+There is no cancel endpoint in this phase. While BullMQ is waiting out a backoff, PostgreSQL status is `waiting`.
+
+## Phase 3 milestone in Postman
+
+Import `postman/QueueFlow.postman_collection.json`. If an older copy is already imported, import this file again and replace it. `npm run dev` and `npm run worker` both have to be running. Leave the worker running through folder 3. Restarting it clears the `failOnce` memory, and the manual retry then fails again.
+
+Open the collection and choose **Run**. Run all four folders in order. Requests that need the worker to finish wait before they send. The Tests tab of each request shows pass or fail.
+
+You can also send the requests yourself from top to bottom. Wait about 1 second after the welcome email, about 6 seconds after the missing-`to` email, and about 1 second after the fail-once email and after its retry. If a check still shows `waiting`, send that request again.
+
+1. **Happy path.** Submit returns `202` and `waiting`. The detail then shows `completed`, `attemptsMade` 1, and `result.message` `Email sent successfully`. The completed filter lists that job and omits `payload` and `result`. Attempts has one completed row.
+2. **Exhausted retries.** The missing-`to` job uses 3 attempts. It returns to `waiting` between them, then ends `failed` with `attemptsMade` 3. The error contains `Missing required field: to`. Attempts are rows 1, 2, and 3, all `failed`.
+3. **Manual retry.** `failOnce` with `attempts` 1 ends `failed`. Retry returns `202` and `waiting`, then the same job becomes `completed` with `attemptsMade` 2. Attempt 1 stays `failed` and attempt 2 is `completed`. Retrying that completed job returns `409`.
+4. **Rejections.** A bad `status` query and an unknown job type return `400`. An unknown id returns `404`.
 
 ## List and fetch jobs
 
@@ -71,7 +85,7 @@ Import `postman/QueueFlow.postman_collection.json` with Postman's Import button.
 
 Optional query params: `status` (`waiting`, `active`, `completed`, `failed`), `type`, `page` (default 1), and `pageSize` (default 20, maximum 100). An invalid query is HTTP 400.
 
-`GET /api/jobs/:id` returns the same fields plus `payload`, `result`, `error`, and `priority`. An unknown or malformed id is HTTP 404.
+`GET /api/jobs/:id` returns the same fields plus `payload`, `result`, `error`, and `priority`. `result` is the processor's JSON object, stored unchanged. `error` is empty when the job succeeded. When it failed, `error` is the message, and in development it also includes the stack, truncated to 4000 characters. The same text is stored on that attempt. An unknown or malformed id is HTTP 404.
 
 `GET /api/jobs/:id/attempts` returns that job's execution attempts in order. Each attempt has `id`, `attemptNumber`, `status`, `error`, `startedAt`, and `completedAt`. A job that has not started returns an empty list. An unknown id is HTTP 404.
 

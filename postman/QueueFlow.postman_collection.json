@@ -1,116 +1,542 @@
 {
   "info": {
     "name": "QueueFlow",
-    "description": "Job submit, list, detail, and attempts. Start the API with npm run dev. Start the worker with npm run worker when a submitted job should be processed.",
+    "description": "Phase 3 milestone. Start the API with npm run dev and the worker with npm run worker. Run the folders from top to bottom with the Collection Runner, or send each request in order. Requests that need the worker to finish wait before they send. Do not restart the worker during folder 3, or the failOnce hook forgets the job and the manual retry fails again. There is no cancel endpoint.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:3000" },
+    { "key": "happyJobId", "value": "" },
+    { "key": "failedJobId", "value": "" },
+    { "key": "retryJobId", "value": "" }
+  ],
   "item": [
     {
-      "name": "Health",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "http://127.0.0.1:3000/health"
-      }
-    },
-    {
-      "name": "Submit welcome email",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+      "name": "1. Happy path",
+      "item": [
+        {
+          "name": "Submit welcome email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('202 and waiting', function () {",
+                  "  pm.response.to.have.status(202);",
+                  "  pm.expect(body.success).to.eql(true);",
+                  "  pm.expect(body.message).to.eql('Job submitted successfully');",
+                  "  pm.expect(body.data.status).to.eql('waiting');",
+                  "  pm.expect(body.data.jobId).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('happyJobId', body.data.jobId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"SEND_EMAIL\",\n  \"payload\": {\n    \"to\": \"test@example.com\",\n    \"subject\": \"Welcome\",\n    \"body\": \"Welcome to QueueFlow!\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/jobs",
+            "description": "Returns immediately with data.jobId and status waiting. The worker then completes the job."
           }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"type\": \"SEND_EMAIL\",\n  \"payload\": {\n    \"to\": \"test@example.com\",\n    \"subject\": \"Welcome\",\n    \"body\": \"Welcome to QueueFlow!\"\n  }\n}"
         },
-        "url": "http://127.0.0.1:3000/api/jobs"
-      }
-    },
-    {
-      "name": "Submit email missing to",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+        {
+          "name": "Get completed job",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "await new Promise((resolve) => setTimeout(resolve, 1000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const job = pm.response.json().data;",
+                  "pm.test('completed contract', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(job.id).to.eql(pm.collectionVariables.get('happyJobId'));",
+                  "  pm.expect(job.type).to.eql('SEND_EMAIL');",
+                  "  pm.expect(job.status).to.eql('completed');",
+                  "  pm.expect(job.attemptsMade).to.eql(1);",
+                  "  pm.expect(job.result.message).to.eql('Email sent successfully');",
+                  "  pm.expect(job.error).to.eql(null);",
+                  "  pm.expect(job.createdAt).to.be.a('string');",
+                  "  pm.expect(job.completedAt).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{happyJobId}}",
+            "description": "Waits 1 second, then expects status completed and result.message Email sent successfully. Read responses use id. Submit responses use jobId. They are the same value."
           }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"type\": \"SEND_EMAIL\",\n  \"payload\": {\n    \"subject\": \"Welcome\",\n    \"body\": \"Welcome to QueueFlow!\"\n  },\n  \"options\": {\n    \"attempts\": 1\n  }\n}"
         },
-        "url": "http://127.0.0.1:3000/api/jobs"
-      }
-    },
-    {
-      "name": "Submit fail once",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+        {
+          "name": "List completed jobs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "pm.test('only completed jobs', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(data.page).to.eql(1);",
+                  "  pm.expect(data.items.length).to.be.above(0);",
+                  "  pm.expect(data.items.every((item) => item.status === 'completed')).to.eql(true);",
+                  "  pm.expect(data.items.some((item) => item.id === pm.collectionVariables.get('happyJobId'))).to.eql(true);",
+                  "  pm.expect(data.items[0].payload).to.eql(undefined);",
+                  "  pm.expect(data.items[0].result).to.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs?status=completed&type=SEND_EMAIL&page=1&pageSize=20",
+            "description": "Newest first. Every item is completed. List rows omit payload and result."
           }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"type\": \"SEND_EMAIL\",\n  \"payload\": {\n    \"to\": \"test@example.com\",\n    \"subject\": \"Retry\",\n    \"body\": \"Fails once, then succeeds.\",\n    \"failOnce\": true\n  }\n}"
         },
-        "url": "http://127.0.0.1:3000/api/jobs",
-        "description": "First attempt fails. BullMQ waits about 1 second, then the second attempt completes. The job returns to waiting between them."
-      }
-    },
-    {
-      "name": "List jobs",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "http://127.0.0.1:3000/api/jobs?page=1&pageSize=20",
-          "protocol": "http",
-          "host": ["127", "0", "0", "1"],
-          "port": "3000",
-          "path": ["api", "jobs"],
-          "query": [
-            { "key": "page", "value": "1" },
-            { "key": "pageSize", "value": "20" },
-            { "key": "status", "value": "completed", "disabled": true },
-            { "key": "type", "value": "SEND_EMAIL", "disabled": true }
-          ]
+        {
+          "name": "Get happy attempts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const attempts = pm.response.json().data;",
+                  "pm.test('one completed attempt', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(attempts).to.have.lengthOf(1);",
+                  "  pm.expect(attempts[0].attemptNumber).to.eql(1);",
+                  "  pm.expect(attempts[0].status).to.eql('completed');",
+                  "  pm.expect(attempts[0].error).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{happyJobId}}/attempts",
+            "description": "One attempt, status completed."
+          }
         }
-      }
+      ]
     },
     {
-      "name": "Get job",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "http://127.0.0.1:3000/api/jobs/00000000-0000-4000-8000-000000000000",
-        "description": "Replace the id with jobId from Submit welcome email."
-      }
+      "name": "2. Exhausted retries",
+      "item": [
+        {
+          "name": "Submit email missing to",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('202 and waiting', function () {",
+                  "  pm.response.to.have.status(202);",
+                  "  pm.expect(body.data.status).to.eql('waiting');",
+                  "});",
+                  "pm.collectionVariables.set('failedJobId', body.data.jobId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"SEND_EMAIL\",\n  \"payload\": {\n    \"subject\": \"Welcome\",\n    \"body\": \"Welcome to QueueFlow!\"\n  },\n  \"options\": {\n    \"attempts\": 3\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/jobs",
+            "description": "Missing to. Three attempts. Backoff is about 1 second, then 2 seconds. The row returns to waiting between attempts and ends failed."
+          }
+        },
+        {
+          "name": "Get exhausted job",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "await new Promise((resolve) => setTimeout(resolve, 6000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const job = pm.response.json().data;",
+                  "pm.test('failed after 3 attempts', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(job.id).to.eql(pm.collectionVariables.get('failedJobId'));",
+                  "  pm.expect(job.status).to.eql('failed');",
+                  "  pm.expect(job.attemptsMade).to.eql(3);",
+                  "  pm.expect(job.result).to.eql(null);",
+                  "  pm.expect(job.error).to.include('Missing required field: to');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{failedJobId}}",
+            "description": "Waits 6 seconds so all three attempts finish. Expect status failed, attemptsMade 3, and a non-empty error."
+          }
+        },
+        {
+          "name": "List failed jobs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "pm.test('failed filter includes this job', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(data.items.every((item) => item.status === 'failed')).to.eql(true);",
+                  "  pm.expect(data.items.some((item) => item.id === pm.collectionVariables.get('failedJobId'))).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs?status=failed&page=1&pageSize=20",
+            "description": "The exhausted job is in this list. Completed jobs are not."
+          }
+        },
+        {
+          "name": "Get exhausted attempts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const attempts = pm.response.json().data;",
+                  "pm.test('three failed attempts', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(attempts).to.have.lengthOf(3);",
+                  "  pm.expect(attempts.map((attempt) => attempt.attemptNumber)).to.eql([1, 2, 3]);",
+                  "  pm.expect(attempts.every((attempt) => attempt.status === 'failed')).to.eql(true);",
+                  "  pm.expect(attempts[0].error).to.include('Missing required field: to');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{failedJobId}}/attempts",
+            "description": "Three rows, attempt numbers 1, 2, and 3, each failed. Earlier rows are not overwritten."
+          }
+        }
+      ]
     },
     {
-      "name": "Get job attempts",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "http://127.0.0.1:3000/api/jobs/00000000-0000-4000-8000-000000000000/attempts",
-        "description": "Replace the id with jobId from Submit welcome email. Attempts are in attemptNumber order."
-      }
+      "name": "3. Manual retry",
+      "item": [
+        {
+          "name": "Submit fail once",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('202 and waiting', function () {",
+                  "  pm.response.to.have.status(202);",
+                  "  pm.expect(body.data.status).to.eql('waiting');",
+                  "});",
+                  "pm.collectionVariables.set('retryJobId', body.data.jobId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"SEND_EMAIL\",\n  \"payload\": {\n    \"to\": \"test@example.com\",\n    \"subject\": \"Retry\",\n    \"body\": \"Fails once, then a manual retry succeeds.\",\n    \"failOnce\": true\n  },\n  \"options\": {\n    \"attempts\": 1\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/jobs",
+            "description": "attempts is 1, so the simulated failure is terminal. Leave the worker running. Restarting it clears failOnce and the later retry fails again."
+          }
+        },
+        {
+          "name": "Get failed job before retry",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "await new Promise((resolve) => setTimeout(resolve, 1000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const job = pm.response.json().data;",
+                  "pm.test('failed once', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(job.status).to.eql('failed');",
+                  "  pm.expect(job.attemptsMade).to.eql(1);",
+                  "  pm.expect(job.error).to.include('Simulated first-attempt failure');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{retryJobId}}",
+            "description": "Waits 1 second. Expect status failed and a non-empty error."
+          }
+        },
+        {
+          "name": "Retry failed job",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('202 and waiting again', function () {",
+                  "  pm.response.to.have.status(202);",
+                  "  pm.expect(body.success).to.eql(true);",
+                  "  pm.expect(body.message).to.eql('Job retry submitted');",
+                  "  pm.expect(body.data.jobId).to.eql(pm.collectionVariables.get('retryJobId'));",
+                  "  pm.expect(body.data.status).to.eql('waiting');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{retryJobId}}/retry",
+            "description": "Only a failed job is accepted. The same job id is queued again and the old attempt row stays."
+          }
+        },
+        {
+          "name": "Get job after retry",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "await new Promise((resolve) => setTimeout(resolve, 1000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const job = pm.response.json().data;",
+                  "pm.test('completed after manual retry', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(job.status).to.eql('completed');",
+                  "  pm.expect(job.attemptsMade).to.eql(2);",
+                  "  pm.expect(job.result.message).to.eql('Email sent successfully');",
+                  "  pm.expect(job.error).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{retryJobId}}",
+            "description": "Waits 1 second. Expect status completed, attemptsMade 2, and the email result."
+          }
+        },
+        {
+          "name": "Get attempts after retry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const attempts = pm.response.json().data;",
+                  "pm.test('failure kept and success appended', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(attempts).to.have.lengthOf(2);",
+                  "  pm.expect(attempts[0].attemptNumber).to.eql(1);",
+                  "  pm.expect(attempts[0].status).to.eql('failed');",
+                  "  pm.expect(attempts[0].error).to.include('Simulated first-attempt failure');",
+                  "  pm.expect(attempts[1].attemptNumber).to.eql(2);",
+                  "  pm.expect(attempts[1].status).to.eql('completed');",
+                  "  pm.expect(attempts[1].error).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{retryJobId}}/attempts",
+            "description": "Attempt 1 stays failed. Attempt 2 is completed."
+          }
+        },
+        {
+          "name": "Retry completed job",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('409 when the job is not failed', function () {",
+                  "  pm.response.to.have.status(409);",
+                  "  pm.expect(body.success).to.eql(false);",
+                  "  pm.expect(body.message).to.eql('Only failed jobs can be retried');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/{{retryJobId}}/retry",
+            "description": "The job is completed now, so retry is rejected."
+          }
+        }
+      ]
     },
     {
-      "name": "Retry failed job",
-      "request": {
-        "method": "POST",
-        "header": [],
-        "url": "http://127.0.0.1:3000/api/jobs/00000000-0000-4000-8000-000000000000/retry",
-        "description": "Replace the id with a failed job. Returns 202 when the job is queued again. Returns 409 unless the job is failed."
-      }
+      "name": "4. Rejections",
+      "item": [
+        {
+          "name": "List with a bad status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('400 for a bad query', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(body.success).to.eql(false);",
+                  "  pm.expect(body.message).to.include('status');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs?status=paused",
+            "description": "status must be waiting, active, completed, or failed."
+          }
+        },
+        {
+          "name": "Get an unknown job",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('404 for an unknown id', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(body.success).to.eql(false);",
+                  "  pm.expect(body.message).to.eql('Job not found');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jobs/00000000-0000-4000-8000-000000000000",
+            "description": "A malformed id is also 404."
+          }
+        },
+        {
+          "name": "Submit an unknown type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('400 for an unknown type', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(body.success).to.eql(false);",
+                  "  pm.expect(body.message).to.include('type');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"NOPE\",\n  \"payload\": {}\n}"
+            },
+            "url": "{{baseUrl}}/api/jobs",
+            "description": "Rejected before a row is queued."
+          }
+        }
+      ]
     }
   ]
 }

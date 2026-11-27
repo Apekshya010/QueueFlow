@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 import { UnrecoverableError, Worker, type Job } from "bullmq";
 import { disconnectDatabase } from "../config/database.js";
 import { disconnectRedis, redis } from "../config/redis.js";
@@ -10,6 +11,8 @@ import {
 import type { Prisma } from "../generated/prisma/client.js";
 import { processors } from "../processors/index.js";
 import { QUEUE_NAME, type QueueJobData } from "../queue/queue.constants.js";
+
+const STORED_ERROR_LIMIT = 4000;
 
 const worker = new Worker<QueueJobData, Prisma.InputJsonObject>(
   QUEUE_NAME,
@@ -46,7 +49,7 @@ async function processJob(job: Job<QueueJobData>): Promise<Prisma.InputJsonObjec
     throw new Error("Unsupported job type");
   }
 
-  return processor(job.data.payload, id);
+  return storedResult(await processor(job.data.payload, id));
 }
 
 worker.on("completed", (job, result) => {
@@ -82,7 +85,7 @@ worker.on("failed", (job, error) => {
   const maxAttempts = job.opts.attempts ?? 1;
   const terminal = job.attemptsMade >= maxAttempts;
 
-  markJobAttemptEnded(id, error.message, attemptNumberOf(job), terminal)
+  markJobAttemptEnded(id, storedError(error), attemptNumberOf(job), terminal)
     .then(() => {
       console.log(`Job ${id} ${terminal ? "failed" : "waiting"}`);
     })
@@ -98,6 +101,38 @@ worker.on("error", (error: Error) => {
 worker.on("ready", () => {
   console.log(`QueueFlow worker listening on queue ${QUEUE_NAME}`);
 });
+
+function storedResult(value: unknown): Prisma.InputJsonObject {
+  let serialized: string;
+
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    throw new Error("Processor result is not JSON-serializable");
+  }
+
+  if (serialized === undefined) {
+    throw new Error("Processor result is not JSON-serializable");
+  }
+
+  const parsed: unknown = JSON.parse(serialized);
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("Processor result must be a JSON object");
+  }
+
+  return parsed as Prisma.InputJsonObject;
+}
+
+function storedError(error: unknown): string {
+  const message = error instanceof Error && error.message.trim().length > 0 ? error.message.trim() : "Job failed";
+
+  if (env.NODE_ENV !== "development" || !(error instanceof Error) || !error.stack) {
+    return message.slice(0, STORED_ERROR_LIMIT);
+  }
+
+  return error.stack.slice(0, STORED_ERROR_LIMIT);
+}
 
 function databaseIdOf(job: Job<QueueJobData>): string | undefined {
   if (typeof job.data.jobId === "string" && job.data.jobId.length > 0) {
