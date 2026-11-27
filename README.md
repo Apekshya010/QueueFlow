@@ -20,6 +20,12 @@ npx prisma migrate dev
 npm run dev
 ```
 
+In a second terminal, start the worker. It picks up queued jobs and writes their status back to PostgreSQL.
+
+```powershell
+npm run worker
+```
+
 `npx prisma generate` is required because the Prisma Client is not committed. `migrate dev` applies the tables in PostgreSQL.
 
 ## Check
@@ -40,7 +46,7 @@ The API listens on port 3000. PostgreSQL is on port 5432 and Redis is on port 63
 
 ## Submit a job
 
-`POST /api/jobs` accepts `SEND_EMAIL` only. The response is HTTP 202 as soon as the job is stored and queued. Nothing runs the job yet. The queue job id is saved on the row as `bull_job_id`. If Redis cannot accept the job, that row is marked `FAILED` and the API returns HTTP 503.
+`POST /api/jobs` accepts `SEND_EMAIL` only. The response is HTTP 202 as soon as the job is stored and queued. The worker, running separately, then marks that row active and, when the task finishes, completed. The queue job id is saved on the row as `bull_job_id`. If Redis cannot accept the job, that row is marked `FAILED` and the API returns HTTP 503.
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/api/jobs -ContentType "application/json" -Body '{"type":"SEND_EMAIL","payload":{"to":"test@example.com","subject":"Welcome","body":"Welcome to QueueFlow!"}}'
