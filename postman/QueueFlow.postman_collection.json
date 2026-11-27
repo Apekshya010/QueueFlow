@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "QueueFlow",
-    "description": "Job submit, list, and detail. Start the API with npm run dev. Start the worker with npm run worker when a submitted job should be processed.",
+    "description": "Job submit, list, detail, and attempts. Start the API with npm run dev. Start the worker with npm run worker when a submitted job should be processed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -74,6 +74,15 @@
         "header": [],
         "url": "http://127.0.0.1:3000/api/jobs/00000000-0000-4000-8000-000000000000",
         "description": "Replace the id with jobId from Submit welcome email."
+      }
+    },
+    {
+      "name": "Get job attempts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "http://127.0.0.1:3000/api/jobs/00000000-0000-4000-8000-000000000000/attempts",
+        "description": "Replace the id with jobId from Submit welcome email. Attempts are in attemptNumber order."
       }
     }
   ]

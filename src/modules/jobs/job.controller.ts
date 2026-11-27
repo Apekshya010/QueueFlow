@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { HttpError } from "../../middleware/error.middleware.js";
 import {
   getJob,
+  listJobAttempts,
   listJobs,
   parseJobId,
   parseListJobsQuery,
@@ -91,6 +92,36 @@ export function getJobById(req: Request, res: Response, next: NextFunction): voi
       res.status(200).json({
         success: true,
         data: job,
+      });
+    })
+    .catch(next);
+}
+
+export function getJobAttempts(req: Request, res: Response, next: NextFunction): void {
+  let id: string;
+
+  try {
+    id = parseJobId(firstParam(req.params.id));
+  } catch (error) {
+    if (error instanceof ZodError) {
+      next(new HttpError(404, "Job not found"));
+      return;
+    }
+
+    next(error);
+    return;
+  }
+
+  listJobAttempts(id)
+    .then((attempts) => {
+      if (!attempts) {
+        next(new HttpError(404, "Job not found"));
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: attempts,
       });
     })
     .catch(next);

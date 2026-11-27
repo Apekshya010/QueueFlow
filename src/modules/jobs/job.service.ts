@@ -1,7 +1,15 @@
 import { z } from "zod";
 import type { JobStatus } from "../../generated/prisma/client.js";
 import { addJob } from "../../queue/queue.factory.js";
-import { createJob, findJobById, findJobs, markJobFailed, setBullJobId } from "./job.repository.js";
+import {
+  createJob,
+  findJobAttempts,
+  findJobById,
+  findJobId,
+  findJobs,
+  markJobFailed,
+  setBullJobId,
+} from "./job.repository.js";
 
 export class EnqueueFailedError extends Error {
   readonly statusCode = 503;
@@ -108,6 +116,25 @@ export async function getJob(id: string) {
   }
 
   return toJobDetail(job);
+}
+
+export async function listJobAttempts(id: string) {
+  const job = await findJobId(id);
+
+  if (!job) {
+    return null;
+  }
+
+  const attempts = await findJobAttempts(id);
+
+  return attempts.map((attempt) => ({
+    id: attempt.id,
+    attemptNumber: attempt.attemptNumber,
+    status: attempt.status.toLowerCase(),
+    error: attempt.error,
+    startedAt: attempt.startedAt,
+    completedAt: attempt.completedAt,
+  }));
 }
 
 function toListItem(job: {

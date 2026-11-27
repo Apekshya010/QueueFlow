@@ -71,7 +71,10 @@ Optional query params: `status` (`waiting`, `active`, `completed`, `failed`), `t
 
 `GET /api/jobs/:id` returns the same fields plus `payload`, `result`, `error`, and `priority`. An unknown or malformed id is HTTP 404.
 
+`GET /api/jobs/:id/attempts` returns that job's execution attempts in order. Each attempt has `id`, `attemptNumber`, `status`, `error`, `startedAt`, and `completedAt`. A job that has not started returns an empty list. An unknown id is HTTP 404.
+
 ```powershell
 curl.exe "http://127.0.0.1:3000/api/jobs?status=completed&page=1&pageSize=20"
 curl.exe http://127.0.0.1:3000/api/jobs/<jobId>
+curl.exe http://127.0.0.1:3000/api/jobs/<jobId>/attempts
 ```

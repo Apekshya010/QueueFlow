@@ -45,48 +45,103 @@ export function markJobFailed(id: string, error: string) {
   });
 }
 
-export function markJobActive(id: string, attemptsMade: number) {
-  return prisma.job.update({
-    where: { id },
-    data: {
-      status: "ACTIVE",
-      startedAt: new Date(),
-      attemptsMade,
-    },
+export function markJobActive(id: string, attemptNumber: number) {
+  const startedAt = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const job = await tx.job.update({
+      where: { id },
+      data: {
+        status: "ACTIVE",
+        startedAt,
+        attemptsMade: attemptNumber,
+      },
+    });
+
+    await tx.jobAttempt.create({
+      data: {
+        jobId: id,
+        attemptNumber,
+        status: "ACTIVE",
+        startedAt,
+      },
+    });
+
+    return job;
   });
 }
 
 export function markJobCompleted(
   id: string,
   result: Prisma.InputJsonValue,
-  attemptsMade: number,
+  attemptNumber: number,
 ) {
-  return prisma.job.update({
-    where: { id },
-    data: {
-      status: "COMPLETED",
-      result,
-      error: null,
-      completedAt: new Date(),
-      attemptsMade,
-    },
+  const completedAt = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const job = await tx.job.update({
+      where: { id },
+      data: {
+        status: "COMPLETED",
+        result,
+        error: null,
+        completedAt,
+        attemptsMade: attemptNumber,
+      },
+    });
+
+    await tx.jobAttempt.update({
+      where: {
+        jobId_attemptNumber: {
+          jobId: id,
+          attemptNumber,
+        },
+      },
+      data: {
+        status: "COMPLETED",
+        error: null,
+        completedAt,
+      },
+    });
+
+    return job;
   });
 }
 
 export function markJobAttemptEnded(
   id: string,
   error: string,
-  attemptsMade: number,
+  attemptNumber: number,
   terminal: boolean,
 ) {
-  return prisma.job.update({
-    where: { id },
-    data: {
-      status: terminal ? "FAILED" : "WAITING",
-      error,
-      attemptsMade,
-      ...(terminal ? { completedAt: new Date() } : {}),
-    },
+  const completedAt = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const job = await tx.job.update({
+      where: { id },
+      data: {
+        status: terminal ? "FAILED" : "WAITING",
+        error,
+        attemptsMade: attemptNumber,
+        ...(terminal ? { completedAt } : {}),
+      },
+    });
+
+    await tx.jobAttempt.update({
+      where: {
+        jobId_attemptNumber: {
+          jobId: id,
+          attemptNumber,
+        },
+      },
+      data: {
+        status: "FAILED",
+        error,
+        completedAt,
+      },
+    });
+
+    return job;
   });
 }
 
@@ -130,5 +185,29 @@ export function findJobById(id: string) {
   return prisma.job.findUnique({
     where: { id },
     select: jobDetailSelect,
+  });
+}
+
+const jobAttemptSelect = {
+  id: true,
+  attemptNumber: true,
+  status: true,
+  error: true,
+  startedAt: true,
+  completedAt: true,
+} satisfies Prisma.JobAttemptSelect;
+
+export function findJobAttempts(jobId: string) {
+  return prisma.jobAttempt.findMany({
+    where: { jobId },
+    orderBy: { attemptNumber: "asc" },
+    select: jobAttemptSelect,
+  });
+}
+
+export function findJobId(id: string) {
+  return prisma.job.findUnique({
+    where: { id },
+    select: { id: true },
   });
 }

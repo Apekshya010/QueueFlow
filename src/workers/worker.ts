@@ -33,7 +33,7 @@ async function processJob(job: Job<QueueJobData>): Promise<Prisma.InputJsonObjec
   }
 
   try {
-    await markJobActive(id, job.attemptsMade);
+    await markJobActive(id, attemptNumberOf(job));
   } catch (error) {
     if (isMissingJob(error)) {
       console.error(`Job ${id} was not found in PostgreSQL`);
@@ -62,7 +62,7 @@ worker.on("completed", (job, result) => {
     return;
   }
 
-  markJobCompleted(id, result, job.attemptsMade)
+  markJobCompleted(id, result, attemptNumberOf(job))
     .then(() => {
       console.log(`Job ${id} completed`);
     })
@@ -82,7 +82,7 @@ worker.on("failed", (job, error) => {
   const maxAttempts = job.opts.attempts ?? 1;
   const terminal = job.attemptsMade >= maxAttempts;
 
-  markJobAttemptEnded(id, error.message, job.attemptsMade, terminal)
+  markJobAttemptEnded(id, error.message, attemptNumberOf(job), terminal)
     .then(() => {
       console.log(`Job ${id} ${terminal ? "failed" : "waiting"}`);
     })
@@ -98,6 +98,16 @@ worker.on("error", (error: Error) => {
 worker.on("ready", () => {
   console.log(`QueueFlow worker listening on queue ${QUEUE_NAME}`);
 });
+
+function attemptNumberOf(job: Job): number {
+  // attemptsStarted increments when the job becomes active. attemptsMade
+  // catches up only after that attempt finishes, so it is still 0 on the first run.
+  if (job.attemptsStarted > 0) {
+    return job.attemptsStarted;
+  }
+
+  return Math.max(job.attemptsMade, 1);
+}
 
 function reportUpdateError(id: string, error: unknown): void {
   if (isMissingJob(error)) {
