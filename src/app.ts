@@ -2,6 +2,7 @@ import express from "express";
 import { prisma } from "./config/database.js";
 import { redis } from "./config/redis.js";
 import { errorMiddleware, HttpError } from "./middleware/error.middleware.js";
+import { jobRouter } from "./modules/jobs/job.routes.js";
 
 const HEALTH_TIMEOUT_MS = 2000;
 
@@ -28,6 +29,8 @@ export function createApp(): express.Express {
       },
     });
   });
+
+  app.use("/api/jobs", jobRouter);
 
   app.use((_req, _res, next) => {
     next(new HttpError(404, "Not found"));
