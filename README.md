@@ -56,9 +56,22 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/api/jobs -ContentType 
 
 ## Test in Postman
 
-Import `postman/QueueFlow.postman_collection.json` with Postman's Import button. There is no `GET /api/jobs` yet. After each send, open Prisma Studio at [http://localhost:5555](http://localhost:5555) and find the `jobId` from the response in the `jobs` table.
+Import `postman/QueueFlow.postman_collection.json` with Postman's Import button. `GET /api/jobs` lists jobs newest first. `GET /api/jobs/:id` returns one job, including its payload and result. After each send, the `jobId` in the 202 response is the id those routes use.
 
 1. With `npm run dev` and `npm run worker` both running, send **Submit welcome email**. The response is HTTP 202 and `status` is `waiting` immediately. Refresh the row. It becomes `COMPLETED`, `attempts_made` is 1, `result` is `{ "message": "Email sent successfully" }`, and both `started_at` and `completed_at` are filled.
 2. Stop the worker terminal with Ctrl+C. Send **Submit welcome email** again. Wait a few seconds and refresh Prisma Studio. That new row stays `WAITING`.
 3. Run `npm run worker` again. Refresh the same row. The worker picks it up and it becomes `COMPLETED`.
 4. With the worker running, send **Submit email missing to**. The API still returns 202. The row then becomes `FAILED` with error `Missing required field: to`. `attempts` is 1 in that request, so it does not retry.
+
+## List and fetch jobs
+
+`GET /api/jobs` returns `{ items, page, pageSize, total }`. Items are newest first and omit `payload` and `result`. Each item has `id`, `type`, `status`, `attemptsMade`, `maxAttempts`, `createdAt`, `startedAt`, and `completedAt`.
+
+Optional query params: `status` (`waiting`, `active`, `completed`, `failed`), `type`, `page` (default 1), and `pageSize` (default 20, maximum 100). An invalid query is HTTP 400.
+
+`GET /api/jobs/:id` returns the same fields plus `payload`, `result`, `error`, and `priority`. An unknown or malformed id is HTTP 404.
+
+```powershell
+curl.exe "http://127.0.0.1:3000/api/jobs?status=completed&page=1&pageSize=20"
+curl.exe http://127.0.0.1:3000/api/jobs/<jobId>
+```

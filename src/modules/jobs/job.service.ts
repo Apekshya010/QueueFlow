@@ -1,6 +1,7 @@
 import { z } from "zod";
+import type { JobStatus } from "../../generated/prisma/client.js";
 import { addJob } from "../../queue/queue.factory.js";
-import { createJob, markJobFailed, setBullJobId } from "./job.repository.js";
+import { createJob, findJobById, findJobs, markJobFailed, setBullJobId } from "./job.repository.js";
 
 export class EnqueueFailedError extends Error {
   readonly statusCode = 503;
@@ -23,8 +24,36 @@ const submitJobSchema = z.object({
 
 export type SubmitJobInput = z.infer<typeof submitJobSchema>;
 
+const publicStatusSchema = z.enum(["waiting", "active", "completed", "failed"]);
+
+const listJobsQuerySchema = z.object({
+  status: z.string().trim().toLowerCase().pipe(publicStatusSchema).optional(),
+  type: z.string().trim().min(1).max(64).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+const jobIdSchema = z.uuid();
+
+const publicToDbStatus = {
+  waiting: "WAITING",
+  active: "ACTIVE",
+  completed: "COMPLETED",
+  failed: "FAILED",
+} as const satisfies Record<z.infer<typeof publicStatusSchema>, JobStatus>;
+
+export type ListJobsQuery = z.infer<typeof listJobsQuerySchema>;
+
 export function parseSubmitJob(body: unknown): SubmitJobInput {
   return submitJobSchema.parse(body);
+}
+
+export function parseListJobsQuery(query: unknown): ListJobsQuery {
+  return listJobsQuerySchema.parse(query);
+}
+
+export function parseJobId(id: unknown): string {
+  return jobIdSchema.parse(id);
 }
 
 export async function submitJob(input: SubmitJobInput) {
@@ -53,6 +82,77 @@ export async function submitJob(input: SubmitJobInput) {
   }
 
   return setBullJobId(job.id, job.id);
+}
+
+export async function listJobs(query: ListJobsQuery) {
+  const { items, total } = await findJobs({
+    ...(query.status ? { status: publicToDbStatus[query.status] } : {}),
+    ...(query.type ? { type: query.type } : {}),
+    skip: (query.page - 1) * query.pageSize,
+    take: query.pageSize,
+  });
+
+  return {
+    items: items.map(toListItem),
+    page: query.page,
+    pageSize: query.pageSize,
+    total,
+  };
+}
+
+export async function getJob(id: string) {
+  const job = await findJobById(id);
+
+  if (!job) {
+    return null;
+  }
+
+  return toJobDetail(job);
+}
+
+function toListItem(job: {
+  id: string;
+  type: string;
+  status: JobStatus;
+  attemptsMade: number;
+  maxAttempts: number;
+  createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+}) {
+  return {
+    id: job.id,
+    type: job.type,
+    status: job.status.toLowerCase(),
+    attemptsMade: job.attemptsMade,
+    maxAttempts: job.maxAttempts,
+    createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
+  };
+}
+
+function toJobDetail(job: {
+  id: string;
+  type: string;
+  status: JobStatus;
+  attemptsMade: number;
+  maxAttempts: number;
+  createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  payload: unknown;
+  result: unknown;
+  error: string | null;
+  priority: number;
+}) {
+  return {
+    ...toListItem(job),
+    payload: job.payload,
+    result: job.result,
+    error: job.error,
+    priority: job.priority,
+  };
 }
 
 function errorText(error: unknown): string {

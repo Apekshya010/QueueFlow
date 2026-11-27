@@ -1,7 +1,16 @@
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { HttpError } from "../../middleware/error.middleware.js";
-import { parseSubmitJob, submitJob, type SubmitJobInput } from "./job.service.js";
+import {
+  getJob,
+  listJobs,
+  parseJobId,
+  parseListJobsQuery,
+  parseSubmitJob,
+  submitJob,
+  type ListJobsQuery,
+  type SubmitJobInput,
+} from "./job.service.js";
 
 export function postJob(req: Request, res: Response, next: NextFunction): void {
   let input: SubmitJobInput;
@@ -30,6 +39,69 @@ export function postJob(req: Request, res: Response, next: NextFunction): void {
       });
     })
     .catch(next);
+}
+
+export function getJobs(req: Request, res: Response, next: NextFunction): void {
+  let query: ListJobsQuery;
+
+  try {
+    query = parseListJobsQuery(req.query);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      next(new HttpError(400, validationMessage(error)));
+      return;
+    }
+
+    next(error);
+    return;
+  }
+
+  listJobs(query)
+    .then((data) => {
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    })
+    .catch(next);
+}
+
+export function getJobById(req: Request, res: Response, next: NextFunction): void {
+  let id: string;
+
+  try {
+    id = parseJobId(firstParam(req.params.id));
+  } catch (error) {
+    if (error instanceof ZodError) {
+      next(new HttpError(404, "Job not found"));
+      return;
+    }
+
+    next(error);
+    return;
+  }
+
+  getJob(id)
+    .then((job) => {
+      if (!job) {
+        next(new HttpError(404, "Job not found"));
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: job,
+      });
+    })
+    .catch(next);
+}
+
+function firstParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+
+  return value ?? "";
 }
 
 function validationMessage(error: ZodError): string {
