@@ -1,9 +1,16 @@
 import type { Prisma } from "../generated/prisma/client.js";
 
+const failedOnce = new Set<string>();
+
 export async function sendEmailProcessor(
   payload: unknown,
   jobId: string,
 ): Promise<Prisma.InputJsonObject> {
+  if (readFailOnce(payload) && !failedOnce.has(jobId)) {
+    failedOnce.add(jobId);
+    throw new Error("Simulated first-attempt failure");
+  }
+
   const email = readEmail(payload);
 
   console.log(
@@ -11,6 +18,15 @@ export async function sendEmailProcessor(
   );
 
   return { message: "Email sent successfully" };
+}
+
+function readFailOnce(payload: unknown): boolean {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    !Array.isArray(payload) &&
+    (payload as Record<string, unknown>).failOnce === true
+  );
 }
 
 function readEmail(payload: unknown): { to: string; subject: string; body: string } {

@@ -52,7 +52,9 @@ The API listens on port 3000. PostgreSQL is on port 5432 and Redis is on port 63
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/api/jobs -ContentType "application/json" -Body '{"type":"SEND_EMAIL","payload":{"to":"test@example.com","subject":"Welcome","body":"Welcome to QueueFlow!"}}'
 ```
 
-`options.attempts` is optional (default 3, maximum 5). Other option fields, including `priority`, are ignored until a later phase.
+`options.attempts` is optional (default 3, maximum 5). A failed attempt is retried by BullMQ with exponential backoff: 1 second, then 2 seconds, then 4 seconds. The job row returns to `waiting` while retries remain, and the latest error stays on the row. When the last attempt fails, the row becomes `failed`. The API does not enqueue the retry itself. Other option fields, including `priority`, are ignored until a later phase.
+
+`payload.failOnce: true` is a dev hook for `SEND_EMAIL`. The first attempt in the current worker process throws `Simulated first-attempt failure`. The next attempt sends the email, so `to`, `subject`, and `body` still have to be present. Restarting the worker clears that memory.
 
 ## Test in Postman
 

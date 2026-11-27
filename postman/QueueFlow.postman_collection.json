@@ -48,6 +48,24 @@
       }
     },
     {
+      "name": "Submit fail once",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"SEND_EMAIL\",\n  \"payload\": {\n    \"to\": \"test@example.com\",\n    \"subject\": \"Retry\",\n    \"body\": \"Fails once, then succeeds.\",\n    \"failOnce\": true\n  }\n}"
+        },
+        "url": "http://127.0.0.1:3000/api/jobs",
+        "description": "First attempt fails. BullMQ waits about 1 second, then the second attempt completes. The job returns to waiting between them."
+      }
+    },
+    {
       "name": "List jobs",
       "request": {
         "method": "GET",
