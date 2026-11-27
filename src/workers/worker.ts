@@ -8,6 +8,7 @@ import {
   markJobCompleted,
 } from "../modules/jobs/job.repository.js";
 import type { Prisma } from "../generated/prisma/client.js";
+import { processors } from "../processors/index.js";
 import { QUEUE_NAME } from "../queue/queue.constants.js";
 
 type QueueJobData = {
@@ -44,11 +45,13 @@ async function processJob(job: Job<QueueJobData>): Promise<Prisma.InputJsonObjec
 
   console.log(`Job ${id} active`);
 
-  if (job.data.type !== "SEND_EMAIL") {
+  const processor = processors[job.data.type];
+
+  if (!processor) {
     throw new Error("Unsupported job type");
   }
 
-  return { message: "Job processed" };
+  return processor(job.data.payload, id);
 }
 
 worker.on("completed", (job, result) => {
